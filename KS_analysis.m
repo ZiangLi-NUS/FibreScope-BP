@@ -91,7 +91,7 @@ grid on;
 disp('[INFO] Filtering KS')
 disp('[PROCESS] Running high/low pass filter');
 Sample1 = high_pass(Sample1, fs, 40);
-Sample1 = low_pass(Sample1, fs, 100);
+Sample1 = low_pass(Sample1, fs, 150);
 disp('[PROCESS] Running notch filter');
 for i = 1:3
     multicancel = 2;

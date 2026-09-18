@@ -12,7 +12,7 @@ min_peak_distance = 0.6;
 % smaller than this time(s) interval will be considered as a KS peak
 max_peak_distance = 1.7;
 % number of consequent data to check
-pulse_check_length = 5;
+pulse_check_length = 4;
 % Write audio file or not, 1 for write
 audio_write_flag = 1;
 % Save figure, 1 for write
@@ -139,8 +139,8 @@ ylabel("Amplitude",'FontSize',label_font_size)
     'MinPeakDistance', min_peak_distance*fs);
 peak_loc = peak_loc/fs;
 if length(peak_loc) > pulse_check_length
-    pulse_start_time = find_pulse_start(peak_loc,pulse_check_length ,max_peak_distance);
-    pulse_end_time = find_pulse_end(peak_loc,pulse_check_length ,max_peak_distance);
+    pulse_start_time = find_pulse_start(peak_loc, pulse_check_length, 0.20);
+    pulse_end_time = find_pulse_end(peak_loc, pulse_check_length, max_peak_distance, 0.20);
     if pulse_start_time < 0.1*run_time
         pulse_start_time = 0;
     end
@@ -292,64 +292,74 @@ function filtered = normalize(Raw_data)
     filtered = Sample1*norm_factor;
 end
 
-function start_time = find_pulse_start(peak_loc,check_length,pulse_interval)
-% peak_loc: time stamp of the peak(peaks' location)
-% check_length: number of consiquent data to check
-% pulse_interval: the interval smaller than this can be consider as a pulse
-    peak_arrary_interval = zeros(1,length(peak_loc)-1);
-    for i=1:length(peak_loc)-1
-        peak_arrary_interval(i) = peak_loc(i+1)-peak_loc(i);
+function start_time = find_pulse_start(peak_loc, check_length, interval_tolerance)
+% FIND_PULSE_START Find the start of a rhythmic pulse sequence.
+% peak_loc:           Time stamps of detected peaks (s)
+% check_length:       Number of consecutive peak intervals to check
+% interval_tolerance: Maximum relative deviation from the median interval
+%                     (e.g., 0.20 for 20%)
+% A sequence is considered rhythmic when all consecutive peak intervals
+% deviate from the median interval of that sequence by no more than the
+% specified relative tolerance.
+
+    peak_array_interval = diff(peak_loc);
+    start_time = 0;
+    if length(peak_array_interval) < check_length
+        return;
     end
-    pulse_start_flag = 0;
-    for i=1:length(peak_arrary_interval)-check_length
-        if peak_arrary_interval(i)<pulse_interval
-            pulse_start_flag = 1;
-            for j=i:i+check_length
-                if peak_arrary_interval(j)>pulse_interval
-                    pulse_start_flag = 0;
-                end
-            end
-        end
-        if pulse_start_flag == 1
-            pulse_start_point = peak_loc(i);
-            break
-        else
-            pulse_start_point = 0;
-            continue
+    for i = 1:(length(peak_array_interval) - check_length + 1)
+        % Select consecutive intervals
+        intervals = peak_array_interval(i:i + check_length - 1);
+        % Median interval as the reference
+        reference_interval = median(intervals);
+        % Relative deviation of each interval from the reference
+        relative_deviation = abs(intervals - reference_interval) ...
+                             / reference_interval;
+        % Check rhythmicity
+        if all(relative_deviation <= interval_tolerance)
+            start_time = peak_loc(i);
+            return;
         end
     end
-    start_time = pulse_start_point;
 end
 
-function end_time = find_pulse_end(peak_loc,check_length,pulse_interval)
-% peak_loc: time stamp of the peak(peaks' location)
-% check_length: number of consiquent data to check
-% pulse_interval: the interval smaller than this can be consider as a pulse
-    peak_arrary_interval = zeros(1,length(peak_loc)-1);
-    for i=1:length(peak_loc)-1
-        peak_arrary_interval(i) = peak_loc(length(peak_loc)-i+1)-peak_loc(length(peak_loc)-i);
-    end
-    pulse_start_flag = 0;
-    for i=1:length(peak_arrary_interval)-check_length
-        if peak_arrary_interval(i)<pulse_interval
-            pulse_start_flag = 1;
-            for j=i:i+check_length
-                if peak_arrary_interval(j)>pulse_interval
-                    pulse_start_flag = 0;
-                end
-            end
-        end
-        if pulse_start_flag == 1
-            pulse_start_point = peak_loc(length(peak_loc)-i+1);
-            break
-        else
-            pulse_start_point = 0;
-            continue
-        end
-    end
-    end_time = pulse_start_point;
-end
+function end_time = find_pulse_end(peak_loc, check_length, ...
+                                   max_interval, interval_tolerance)
+% FIND_PULSE_END Find the end of a rhythmic pulse sequence.
+% peak_loc:           Time stamps of detected peaks (s)
+% check_length:       Number of consecutive peak intervals to check
+% max_interval:       Maximum allowed peak-to-peak interval (s)
+% interval_tolerance: Maximum relative deviation from the median interval
+%                     (e.g., 0.20 for 20%)
+% The function searches backwards from the last detected peak.
+% A sequence is considered rhythmic when all consecutive peak intervals
+% are below max_interval and deviate from the median interval of the
+% candidate sequence by no more than the specified relative tolerance.
 
+    peak_array_interval = diff(peak_loc);
+    end_time = 0;
+
+    if length(peak_array_interval) < check_length
+        return;
+    end
+    % Search backwards from the end
+    for i = length(peak_array_interval):-1:check_length
+        % Select consecutive intervals ending at interval i
+        intervals = peak_array_interval(i - check_length + 1:i);
+        % Median interval as the reference
+        reference_interval = median(intervals);
+        % Relative deviation from the reference interval
+        relative_deviation = abs(intervals - reference_interval) ...
+                             / reference_interval;
+        % Check rhythmicity
+        if all(intervals <= max_interval) && ...
+           all(relative_deviation <= interval_tolerance)
+            % interval i ends at peak i+1
+            end_time = peak_loc(i + 1);
+            return;
+        end
+    end
+end
 
 function csv_to_mat(file_name)
     if isfile(file_name + ".mat") == 0
